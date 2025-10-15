@@ -1,0 +1,12 @@
+
+global:
+  scrape_interval: 5s
+scrape_configs:
+  - job_name: 'auth'
+    static_configs: [{ targets: ['auth:9100'] }]
+  - job_name: 'gateway'
+    static_configs: [{ targets: ['gateway:9101'] }]
+  - job_name: 'accounts'
+    static_configs: [{ targets: ['accounts:9102'] }]
+  - job_name: 'rotation'
+    static_configs: [{ targets: ['rotation:9103'] }]

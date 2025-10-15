@@ -1,0 +1,13 @@
+
+{
+  "name": "auth-ultra-mini",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": { "start": "node index.js" },
+  "dependencies": {
+    "better-sqlite3": "^9.4.0",
+    "express": "^4.19.2",
+    "nanoid": "^5.0.7",
+    "prom-client": "^15.1.2"
+  }
+}

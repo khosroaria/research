@@ -1,0 +1,52 @@
+
+version: "3.9"
+services:
+  prometheus:
+    image: prom/prometheus
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports: ["9090:9090"]
+
+  auth:
+    build: ./services/auth
+    environment:
+      - PORT=7000
+      - DB_PATH=/data/auth.sqlite
+      - ACCESS_TTL_SEC=600
+      - GRACE_SEC=60
+      - PROM_PORT=9100
+    volumes:
+      - authdata:/data
+    ports: ["7700:7000","9100:9100"]
+
+  gateway:
+    build: ./services/gateway
+    environment:
+      - PORT=8080
+      - AUTH_INTROSPECT=http://auth:7000/introspect
+      - TARGET_ACCOUNTS=http://accounts:7300
+      - PROM_PORT=9101
+    depends_on: [auth, accounts]
+    ports: ["8080:8080","9101:9101"]
+
+  accounts:
+    build: ./services/accounts
+    environment:
+      - PORT=7300
+      - PROM_PORT=9102
+    ports: ["7300:7300","9102:9102"]
+
+  rotation:
+    build: ./services/rotation
+    environment:
+      - AUTH_ISSUE=http://auth:7000/issue
+      - SERVICE_ID=accounts
+      - ROTATE_INTERVAL_SEC=300
+      - GRACE_SEC=60
+      - PROM_PORT=9103
+    depends_on: [auth]
+    ports: ["9103:9103"]
+
+volumes:
+  authdata:

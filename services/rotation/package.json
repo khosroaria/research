@@ -1,0 +1,8 @@
+
+{
+  "name": "rotation-ultra-mini",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": { "start": "node rotate.js" },
+  "dependencies": { "express": "^4.18.2", "node-fetch": "^3.3.2", "prom-client": "^15.1.2" }
+}
