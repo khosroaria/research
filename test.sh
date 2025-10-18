@@ -27,7 +27,10 @@ docker compose down -v
 docker image prune -f
 docker compose up --build -d
 docker compose ps
-# expected output : auth       0.0.0.0:7070->7000/tcp
+docker compose logs -f --tail=10 auth
+
+
+
 
 
 

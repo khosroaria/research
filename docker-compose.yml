@@ -1,4 +1,3 @@
-
 version: "3.9"
 services:
   prometheus:
@@ -13,8 +12,8 @@ services:
     environment:
       - PORT=7000
       - DB_PATH=/data/auth.sqlite
-      - ACCESS_TTL_SEC=600
-      - GRACE_SEC=60
+      - ACCESS_TTL_SEC=${ACCESS_TTL_SEC:-600}
+      - GRACE_SEC=${GRACE_SEC:-60}
       - PROM_PORT=9100
     volumes:
       - authdata:/data
@@ -42,8 +41,8 @@ services:
     environment:
       - AUTH_ISSUE=http://auth:7000/issue
       - SERVICE_ID=accounts
-      - ROTATE_INTERVAL_SEC=300
-      - GRACE_SEC=60
+      - ROTATE_INTERVAL_SEC=${ROTATE_INTERVAL_SEC:-300}
+      - GRACE_SEC=${GRACE_SEC:-60}
       - PROM_PORT=9103
     depends_on: [auth]
     ports: ["9103:9103"]
