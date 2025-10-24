@@ -118,9 +118,24 @@ wait $BASE_PID || true
 wait $REPLAY_PID || true
 echo "k6 runs completed."
 
-# -----------------------
-# 5) Measure misuse window - poll until 401 or timeout (max 2x TTL or 600s)
-# -----------------------
+## -----------------------
+# 5) Issue fresh token for misuse window measurement
+## -----------------------
+echo "Issuing fresh token for misuse window..."
+MISUSE_TOKEN_RAW=$(curl -s -X POST "$AUTH_ISSUE_URL" -H 'Content-Type: application/json' -d '{"service_id":"accounts"}')
+echo "$MISUSE_TOKEN_RAW" | jq . > "$RUN_DIR/misuse_token_raw.json" || true
+MISUSE_TOKEN=$(echo "$MISUSE_TOKEN_RAW" | jq -r .access_token 2>/dev/null || echo "")
+MISUSE_TOKEN=$(echo -n "$MISUSE_TOKEN" | tr -d '\r\n"')
+if [[ -z "$MISUSE_TOKEN" ]]; then
+  echo "Failed to obtain misuse token. Contents of response saved at $RUN_DIR/misuse_token_raw.json"
+  exit 1
+fi
+echo "Fresh misuse token issued."
+echo "$MISUSE_TOKEN" > "$RUN_DIR/misuse_token.txt"
+
+## -----------------------
+# 6) Measure misuse window - poll until 401 or timeout (max 2x TTL or 600s)
+## -----------------------
 echo "Measuring misuse window..."
 START_TS=$(date +%s)
 MAX_WAIT=$(( (TTL * 2) > 600 ? (TTL * 2) : 600 ))
@@ -130,7 +145,7 @@ echo "elapsed_s,http_code" > "$MISUSE_CSV"
 while true; do
   NOW_TS=$(date +%s)
   ELAPSED=$(( NOW_TS - START_TS ))
-  CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOKEN" "$GATEWAY_URL" || echo "000")
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $MISUSE_TOKEN" "$GATEWAY_URL" || echo "000")
   echo "${ELAPSED},${CODE}" | tee -a "$MISUSE_CSV" > /dev/null
   if [[ "$CODE" == "401" || "$ELAPSED" -ge "$MAX_WAIT" ]]; then
     break
@@ -148,6 +163,7 @@ STEP=10
 
 echo "Exporting Prometheus series (start=$START_TS end=$END_TS step=$STEP)..."
 
+ 
 # helper to call prometheus query_range with url-encoded query
 prom_query_range () {
   local q="$1"; local out="$2"

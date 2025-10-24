@@ -39,8 +39,7 @@ volumes/
 k6/results/
 k6/output/
 k6/tmp/
-*.json
-*.csv
+
 
 # Prometheus & Loki data
 prometheus-data/

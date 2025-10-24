@@ -12,7 +12,8 @@ client.collectDefaultMetrics({ register });
 const reqLatency = new client.Histogram({
   name: 'gateway_request_latency_ms',
   help: 'Gateway request latency',
-  buckets: [5,10,20,50,100,200,500,1000]
+  // Wider and more granular buckets (ms)
+  buckets: [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000]
 });
 register.registerMetric(reqLatency);
 

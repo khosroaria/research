@@ -1,55 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Ensure the single-run script is present
-if [[ ! -x ./run_experiment.sh ]]; then
-  echo "ERROR: ./run_experiment.sh not found or not executable."
-  echo "Make sure it exists and run: chmod +x run_experiment.sh"
-  exit 1
-fi
+# Aggregation-only script: rebuilds aggregate CSVs from existing run directories, does NOT rerun experiments.
 
-# --------------------------------------------
-# Define scenarios: name,ttl,rotate,grace,duration
-# Edit this list as needed.
-# --------------------------------------------
-SCENARIOS=(
-  # name, TTL(sec), rotation(sec), grace(sec), duration(sec)
-  "control,86400,0,0,300"             # No rotation — baseline misuse window (24h token)
-  "balanced,300,150,30,300"           # Moderate rotation, realistic for production
-  "moderate,600,300,60,300"           # Longer TTL — lower overhead
-  "short,120,60,15,300"               # Aggressive, real-time apps (tight security)
-  "aggressive,60,30,10,300"           # Very short TTL, rotation overlap for testing edge
-  "very_aggressive,30,15,5,300"       # Stress-test scenario — extreme rotation cost
-)
-
+SCENARIOS=(balanced moderate short aggressive very_aggressive)
 
 BATCH_TS=$(date -u +%Y%m%dT%H%M%SZ)
 AGG_DIR="runs/_aggregate/${BATCH_TS}"
 mkdir -p "${AGG_DIR}"
 
-# Aggregate file names
 AGG_P95_GATEWAY="${AGG_DIR}/agg_p95_gateway_latency.csv"
 AGG_AVG_GATEWAY="${AGG_DIR}/agg_avg_gateway_latency.csv"
 AGG_RPS_GATEWAY="${AGG_DIR}/agg_rps_gateway.csv"
 AGG_P95_INTROSPECT="${AGG_DIR}/agg_p95_introspect.csv"
 AGG_MISUSE="${AGG_DIR}/agg_misuse_window.csv"
 
-# Initialize headers
 echo "scenario,timestamp,value" > "$AGG_P95_GATEWAY"
 echo "scenario,timestamp,value" > "$AGG_AVG_GATEWAY"
 echo "scenario,timestamp,value" > "$AGG_RPS_GATEWAY"
 echo "scenario,timestamp,value" > "$AGG_P95_INTROSPECT"
 echo "scenario,elapsed_s,http_code" > "$AGG_MISUSE"
 
-# Helper: latest run dir for a given name
-latest_run_dir_for() {
-  local name="$1"
-  # Pick the most recent directory that starts with name_
-  ls -1d runs/"${name}"_* 2>/dev/null | sort | tail -n1
-}
-
-# Helper: prepend scenario to CSV rows "timestamp,value" -> "scenario,timestamp,value"
-# More robust: warn if file missing/empty, handle quoted/blank lines, log row count
 prepend_scenario_csv() {
   local scenario="$1"
   local infile="$2"
@@ -67,7 +38,6 @@ prepend_scenario_csv() {
     BEGIN { OFS="," }
     NR==1 { next } # skip header
     {
-      # Remove quotes from each field
       gsub(/"/, "", $1); gsub(/"/, "", $2);
       if ($1 ~ /^[0-9]+$/ && $2 ~ /^-?[0-9.]+$/) {
         print s,$1,$2
@@ -78,7 +48,6 @@ prepend_scenario_csv() {
   echo "[INFO] Aggregated $added rows from $infile into $outfile"
 }
 
-# Helper: prepend scenario to misuse_window.csv "elapsed_s,http_code" -> "scenario,elapsed_s,http_code"
 prepend_scenario_misuse() {
   local scenario="$1"
   local infile="$2"
@@ -96,7 +65,7 @@ prepend_scenario_misuse() {
     BEGIN { OFS="," }
     NR==1 { next }
     {
-      gsub(/"/, "", $0);
+      gsub(/"/, "", $1); gsub(/"/, "", $2);
       if ($1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/) {
         print s,$1,$2
       }
@@ -106,34 +75,29 @@ prepend_scenario_misuse() {
   echo "[INFO] Aggregated $added rows from $infile into $outfile"
 }
 
-# --------------------------------------------
-# Main loop
-# --------------------------------------------
 
-for spec in "${SCENARIOS[@]}"; do
-  IFS=',' read -r NAME TTL ROTATE GRACE DURATION <<< "$spec"
-
-  if [[ "$NAME" == "control" ]]; then
-    echo
-    echo "===== Skipping run for control scenario: $NAME (TTL=$TTL) ====="
-    # Only aggregate control scenario with TTL as misuse window
-    echo "$NAME,$TTL,200" >> "$AGG_MISUSE"
-    echo "Aggregated $NAME (control only, no experiment run)"
+for NAME in "${SCENARIOS[@]}"; do
+  # Only consider directories, not .tar.gz files
+  RUN_DIR=$(find runs -maxdepth 1 -type d -name "${NAME}_*" | sort | tail -n1)
+  if [[ -z "$RUN_DIR" ]]; then
+    echo "[WARN] No run directory found for $NAME, skipping."
     continue
   fi
-
-  echo
-  echo "===== Running scenario: $NAME (TTL=$TTL, ROTATE=$ROTATE, GRACE=$GRACE, DURATION=${DURATION}s) ====="
-  ./run_experiment.sh --name "$NAME" --ttl "$TTL" --rotate "$ROTATE" --grace "$GRACE" --duration "$DURATION"
-
-  RUN_DIR=$(latest_run_dir_for "$NAME")
-  if [[ -z "$RUN_DIR" ]]; then
-    echo "ERROR: Could not locate run directory for scenario $NAME"
-    exit 1
+  echo "[INFO] Aggregating $NAME from $RUN_DIR"
+  for METRIC in p95_gateway_latency avg_gateway_latency rps_gateway p95_introspect; do
+    FILE="$RUN_DIR/${METRIC}.csv"
+    if [[ -f "$FILE" ]]; then
+      echo "[DEBUG] Found $FILE, head:"; head -3 "$FILE"
+    else
+      echo "[DEBUG] Missing $FILE"
+    fi
+  done
+  MISUSE_FILE="$RUN_DIR/misuse_window.csv"
+  if [[ -f "$MISUSE_FILE" ]]; then
+    echo "[DEBUG] Found $MISUSE_FILE, head:"; head -3 "$MISUSE_FILE"
+  else
+    echo "[DEBUG] Missing $MISUSE_FILE"
   fi
-  echo "Using run dir: $RUN_DIR"
-
-  # Aggregate Prometheus CSVs
   prepend_scenario_csv "$NAME" "$RUN_DIR/p95_gateway_latency.csv" "$AGG_P95_GATEWAY"
   prepend_scenario_csv "$NAME" "$RUN_DIR/avg_gateway_latency.csv" "$AGG_AVG_GATEWAY"
   prepend_scenario_csv "$NAME" "$RUN_DIR/rps_gateway.csv" "$AGG_RPS_GATEWAY"
@@ -143,7 +107,7 @@ for spec in "${SCENARIOS[@]}"; do
 done
 
 echo
-echo "=== DONE. Aggregates in: $AGG_DIR ==="
+"=== DONE. Aggregates in: $AGG_DIR ==="
 echo "- $AGG_P95_GATEWAY"
 echo "- $AGG_AVG_GATEWAY"
 echo "- $AGG_RPS_GATEWAY"
